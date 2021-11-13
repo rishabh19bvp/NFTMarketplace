@@ -157,7 +157,8 @@ abstract contract Ownable is Context {
 
 interface IERC721 {
     function ownerOf(uint256 tokenId) external view returns (address owner);
-    function mint(address account, uint256 tokenID) external returns(bool);
+    function getApproved(uint256 tokenId) external view returns (address);
+    function transferFrom(address from, address to, uint256 tokenId) external;
 }
 
 contract MarketPlace is Ownable{
@@ -165,7 +166,10 @@ contract MarketPlace is Ownable{
     IERC20 public currency;
     IERC721 public nft;
     
-    event Bought(address owner, uint256 price, uint256 tokenID);
+    mapping (uint256 => bool) public isAvailableToSell;
+    mapping (uint256 => address) public currentOwner;
+    
+    event Sold(address buyer, address seller, uint256 price, uint256 tokenID);
     
     
     constructor(uint256 _minPrice, address _currency, address _nft) public {
@@ -174,16 +178,40 @@ contract MarketPlace is Ownable{
         nft = IERC721(_nft);
     }
     
-     function buy(uint256 amount, uint256 tokenID) public {
-         require( amount > minPrice, "amount should be greater thean minPrice ");
-         require(nft.ownerOf(tokenID) == address(0), "This token already exists");
+     
+    function proposeToSell(uint256 tokenID) public {
+        require(nft.ownerOf(tokenID) == address(msg.sender), "You are not the owner of this nft");
+        require(nft.getApproved(tokenID) == address(this), "You have not approved the MarketPlace");
          
-         currency.transferFrom(msg.sender, address(this), amount);
-         nft.mint(msg.sender, tokenID);
-    
-        emit Bought(msg.sender, amount, tokenID);
+        isAvailableToSell[tokenID] = true;
+        currentOwner[tokenID] = address(msg.sender);
+    }
+     
+    function withdrawProposal(uint256 tokenID) public {
+        require(nft.ownerOf(tokenID) == address(msg.sender), "You are not the owner of this nft");
+        require(isAvailableToSell[tokenID], "This nft is no longer available on the MarketPlace");
+         
+        delete isAvailableToSell[tokenID];
+        delete currentOwner[tokenID];
      }
+     
+    function buy(uint256 amount, uint256 tokenID) public {
+        require( amount > minPrice, "amount should be greater thean minPrice ");
+        require(isAvailableToSell[tokenID], "This nft is no longer available on the MarketPlace");
+         
+        address seller = currentOwner[tokenID];
+        
+        delete isAvailableToSell[tokenID];
+        delete currentOwner[tokenID];
+        
+        currency.transferFrom(msg.sender, address(this), amount);
+        nft.transferFrom(seller, msg.sender, tokenID);
+        
+        emit Sold(msg.sender, seller, amount, tokenID);
+    }
 }
     
+
+
 
 
